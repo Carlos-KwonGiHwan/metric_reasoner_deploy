@@ -1,8 +1,7 @@
 receivers:
-  # 1) Node Exporter 대체 (호스트 CPU, 메모리, 디스크 등)
   hostmetrics:
-    root_path: /host/root  # 호스트 파일시스템 마운트 경로
-    collection_interval: 10s
+    root_path: /host/root
+    collection_interval: "${env:COLLECTION_INTERVAL}"
     scrapers:
       cpu:
       memory:
@@ -11,60 +10,126 @@ receivers:
       load:
       disk:
 
-  # 2) cAdvisor 대체 (컨테이너별 CPU, 메모리 사용량)
   docker_stats:
     endpoint: "unix:///var/run/docker.sock"
-    collection_interval: 10s
+    api_version: "${env:DOCKER_API_VERSION}"
+    collection_interval: "${env:COLLECTION_INTERVAL}"
     metrics:
-      container.cpu.usage.total:
-        enabled: true
-      container.memory.usage.total:
-        enabled: true
-      container.network.io.usage.rx_bytes:
-        enabled: true
-      container.network.io.usage.tx_bytes:
-        enabled: true
+      container.cpu.usage.total: { enabled: true }
+      container.memory.usage.total: { enabled: true }
+      container.network.io.usage.rx_bytes: { enabled: true }
+      container.network.io.usage.tx_bytes: { enabled: true }
 
-  # 3) 로그 수집
   filelog:
-    include: ["/var/lib/docker/containers/*/*-json.log"] # 도커 표준 로그
+    include:
+      - ${env:APP_LOG_DIR}/**/*.log
     operators:
-      - type: json_parser # 도커 로그는 JSON으로 래핑되어 있음
+      # 1) MySQL general log 파싱
+      - type: regex_parser
+        id: mysql_parser
+        parse_from: body
+        # ts + conn_id + cmd + (optional msg)
+        regex: '^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(?P<conn_id>\d+)\s+(?P<cmd>[A-Za-z]+)(?:\s+(?P<msg>.*))?$'
         timestamp:
-          parse_from: time
-          layout: '%Y-%m-%dT%H:%M:%S.%LZ'
-        body:
-          parse_from: log
-    # (필요시 특정 앱 로그 파일 추가 가능)
+          parse_from: attributes.ts
+          layout: '%Y-%m-%dT%H:%M:%S.%fZ'
+
+      # 2) Python logger 패턴 파싱
+      - type: regex_parser
+        id: python_parser
+        parse_from: body
+        regex: '^(?P<ts>\d{2}:\d{2}:\d{2}\.\d{3}) \| (?P<level>\S+) \| (?P<location>[^-]+) - (?P<msg>.*)$'
+        timestamp:
+          parse_from: attributes.ts
+          layout: '%H:%M:%S.%L'
+
+      # 3) MySQL/Python 둘 중 하나라도 msg가 있으면 body를 msg로 이동
+      - type: move
+        from: attributes.msg
+        to: body
+        if: 'attributes.msg != nil'
+
+      # 4) timestamp attribute 정리
+      - type: remove
+        field: attributes.ts
+        if: 'attributes.ts != nil'
+
+      # 5) Fallback: MySQL·Python 둘 다 실패한 경우만 unparsed=true
+      - type: add
+        field: attributes.unparsed
+        value: "true"
+        if: 'attributes.conn_id == nil and attributes.level == nil'
+
+  # [신규 추가] Docker 컨테이너 표준 로그(stdout/stderr) 수집
+  filelog/docker:
+    include:
+      - /var/lib/docker/containers/*/*-json.log
+    operators:
+      # 1. 파일 경로에서 Container ID 추출 (이게 있어야 resourcedetection이 작동함)
+      - type: regex_parser
+        id: extract_metadata_from_path
+        parse_from: attributes["log.file.path"]
+        regex: 'containers/(?P<container_id>[a-z0-9]{64})/'
+        to: resource["container.id"]
+
+################### 여기 mysql과 python 파서 달아야할수도 있음###############################
+
+# 2. Docker JSON 로그 파싱
+      - type: json_parser
+        id: parser_docker
+        parse_from: body
+        timestamp:
+          # [수정 전] parse_from: time  <-- 에러 원인 (Prefix 없음)
+          # [수정 후] attributes.time 으로 변경
+          parse_from: attributes.time
+          layout: '%Y-%m-%dT%H:%M:%S.%fZ'
+
+      # 3. 실제 로그 메시지를 body로 이동
+      - type: move
+        from: attributes.log
+        to: body
+
+      # 4. stream 정보(stdout/stderr)를 속성으로 저장
+      - type: move
+        from: attributes.stream
+        to: attributes["log.stream"]
 
 processors:
-  # 호스트 정보 자동 감지
   resourcedetection:
-    detectors: [env, system, docker] # docker 디텍터가 container.name 등을 잡아줌
-    timeout: 5s
-    override: false
+    detectors: [env, system, docker]
 
-  # 메모리 보호 및 배치 전송
   memory_limiter:
     check_interval: 1s
-    limit_mib: 400
+    limit_mib: ${env:MEMORY_LIMIT_MIB}
+
+
+  filter/drop_otel:
+      error_mode: ignore
+      logs:
+        log_record:
+          # [수정] resource -> resource.attributes 로 경로 변경
+          - 'IsMatch(resource.attributes["container.image.name"], "otel/opentelemetry-collector")'
+          - 'IsMatch(resource.attributes["container.name"], "otel-agent")'
+
   batch:
 
 exporters:
   otlp:
-    endpoint: "${OTEL_EXPORTER_OTLP_ENDPOINT}" # 중앙 수집기로 전송
+    endpoint: "http://${env:OTEL_EXPORTER_OTLP_ENDPOINT}"
     tls:
       insecure: true
+
   debug:
-      verbosity: detailed
+    verbosity: detailed
 
 service:
   pipelines:
     metrics:
       receivers: [hostmetrics, docker_stats]
       processors: [resourcedetection, memory_limiter, batch]
-      exporters: [otlp, debug]
+      exporters: [otlp]
+
     logs:
       receivers: [filelog]
-      processors: [resourcedetection, memory_limiter, batch]
+      processors: [resourcedetection, memory_limiter, filter/drop_otel, batch]
       exporters: [otlp, debug]
