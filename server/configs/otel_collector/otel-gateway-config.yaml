@@ -1,0 +1,52 @@
+# otel-gateway-config.yaml
+extensions:
+  # 1. 인증 설정 (API Key 정의)
+  bearertokenauth/incoming:
+    token: "my-secret-api-key-1234"
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        auth:
+          authenticator: bearertokenauth/incoming
+      http:
+        endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: bearertokenauth/incoming
+
+processors:
+  # 2. 메모리 보호 (급격한 트래픽 스파이크 방지)
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 1000
+    spike_limit_mib: 200
+
+  # 3. 배치 처리 (네트워크 전송 효율화)
+  batch:
+    send_batch_size: 2000
+    timeout: 5s
+
+exporters:
+  # 4. Backend Collector로 전달 (Docker Service Name 사용)
+  otlp/signoz:
+    endpoint: "signoz-otel-collector:4317"
+    tls:
+      insecure: true
+
+service:
+  extensions: [bearertokenauth/incoming]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/signoz]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/signoz]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/signoz]

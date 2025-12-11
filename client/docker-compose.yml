@@ -1,34 +1,39 @@
 version: "3.9"
 
 services:
-  # OTel Agent 하나가 [시스템 메트릭 + 도커 통계 + 로그] 모두 수행
   otel-agent:
-    image: otel/opentelemetry-collector-contrib:latest # 'contrib' 이미지 필수 (기능이 더 많음)
+    image: otel/opentelemetry-collector-contrib:0.100.0  # contrib 이미지 필수
     container_name: otel-agent
     command: ["--config=/etc/otelcol/config.yaml"]
-    user: "0:0" # 호스트 시스템 파일 접근을 위해 root 권한 권장 (선택사항)
+    user: "0:0"
+    restart: unless-stopped
+    network_mode: "host"  # [중요] 호스트 네트워크 사용
+
     volumes:
-      - ./otel/otel-agent-config.yaml:/etc/otelcol/config.yaml:ro
-      
-      # [1. 시스템 메트릭 수집용 - Node Exporter 대체]
+      - ${CONFIG_DIR}/otel-agent-config.yaml:/etc/otelcol/config.yaml:ro
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
-      - /:/host/root:ro
-
-      # [2. 도커 상태 수집용 - cAdvisor 대체]
+      - /:/host/root:ro,rslave
       - /var/run/docker.sock:/var/run/docker.sock:ro
-
-      # [3. 로그 수집용]
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - ${APP_LOG_DIR}:${APP_LOG_DIR}:ro
-      
+
     environment:
-      # hostmetrics 리시버가 호스트 경로를 알 수 있게 환경변수 설정
+      # 1. 연결 및 인증 정보
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_COLLECTOR_HOST} # 예: 127.0.0.1:4317
+      - GATEWAY_AUTH_TOKEN=${GATEWAY_AUTH_TOKEN}           # [추가] 인증 토큰
+
+      # 2. 메타데이터 및 변수
+      - NODE_ID=${NODE_ID}
+      - APP_LOG_DIR=${APP_LOG_DIR}
+      - DOCKER_API_VERSION=${DOCKER_API_VERSION:-1.24}
+      - COLLECTION_INTERVAL=${COLLECTION_INTERVAL:-10s}
+      - MEMORY_LIMIT_MIB=${MEMORY_LIMIT_MIB:-400}
+      
+      # 3. Host Metrics 경로 (Config 파일에서 참조)
       - HOST_PROC=/host/proc
       - HOST_SYS=/host/sys
       - HOST_FILESYSTEM=/host/root
-      # 메타데이터 주입
-      - OTEL_RESOURCE_ATTRIBUTES=service.name=${OTEL_LOG_AGENT_NAME},deployment.environment=prod,system.version=v1.2.0
-      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_COLLECTOR_ENDPOINT} # 중앙 서버 주소
-      
-    restart: unless-stopped
+
+      # 4. 리소스 속성 (자동 주입됨)
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=${OTEL_LOG_AGENT_NAME},deployment.environment=${DEPLOYMENT_ENV},system.version=${SYSTEM_VERSION},host.name=${NODE_ID}
