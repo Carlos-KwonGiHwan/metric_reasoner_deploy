@@ -24,7 +24,11 @@ services:
     volumes:
       - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
     depends_on:
-      - clickhouse
+      - openobserve
+    deploy:
+      resources:
+        limits:
+          memory: 1500M
 
   otel-collector-2:
     image: signoz/signoz-otel-collector:0.88.10
@@ -33,7 +37,11 @@ services:
     volumes:
       - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
     depends_on:
-      - clickhouse
+      - openobserve
+    deploy:
+      resources:
+        limits:
+          memory: 1500M
 
   otel-collector-3:
     image: signoz/signoz-otel-collector:0.88.10
@@ -42,46 +50,29 @@ services:
     volumes:
       - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
     depends_on:
-      - clickhouse
+      - openobserve
+    deploy:
+      resources:
+        limits:
+          memory: 1500M
 
-  # --- 3. SigNoz Backend (DB & UI) ---
-  clickhouse:
-    image: clickhouse/clickhouse-server:24.1.2-alpine
+  # --- 3. OpenObserve (Backend & UI) ---
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:latest
+    container_name: openobserve
+    restart: always
     ports:
-      - "9000:9000"
-      - "8123:8123"
-    ulimits:
-      nofile:
-        soft: 262144
-        hard: 262144
+      - "5080:5080" # UI 접속 포트
     volumes:
-      - ./clickhouse-data:/var/lib/clickhouse
-    depends_on:
-      - zookeeper
-
-  zookeeper:
-    image: zookeeper:3.9
-    ports:
-      - "2181:2181"
-
-  query-service:
-    image: signoz/query-service:0.45.0
-    command: ["-config=/root/config/prometheus.yml"]
+      - ./data:/data
     environment:
-      - ClickHouseUrl=tcp://clickhouse:9000
-      - STORAGE=clickhouse
-      - GIGABYTE_INDEX_VERSION=v4
-    ports:
-      - "8080:8080"
-    depends_on:
-      - clickhouse
-
-  frontend:
-    image: signoz/frontend:0.45.0
-    ports:
-      - "3301:3301"
-    depends_on:
-      - query-service
-
-volumes:
-  clickhouse-data:
+      - ZO_ROOT_USER_EMAIL=admin@example.com
+      - ZO_ROOT_USER_PASSWORD=ChangeMe123!
+      # S3 설정 (이전 대화 기반)
+      - ZO_S3_BUCKET_NAME=my-openobserve-bucket
+      - ZO_S3_REGION_NAME=ap-northeast-2
+      - ZO_DATA_DIR=/data
+      - ZO_STORAGE_TYPE=s3
+      # AWS IAM Role 사용 시 아래 키 삭제 가능
+      - AWS_ACCESS_KEY_ID=YOUR_ACCESS_KEY
+      - AWS_SECRET_ACCESS_KEY=YOUR_SECRET_KEY

@@ -3,6 +3,8 @@ extensions:
   # 1. 인증 설정 (API Key 정의)
   bearertokenauth/incoming:
     token: "my-secret-api-key-1234"
+  health_check:
+    endpoint: "0.0.0.0:13133"
 
 receivers:
   otlp:
@@ -29,24 +31,29 @@ processors:
     timeout: 5s
 
 exporters:
-  # 4. Backend Collector로 전달 (Docker Service Name 사용)
-  otlp/signoz:
-    endpoint: "signoz-otel-collector:4317"
+  # OpenObserve로 보내는 설정
+  otlphttp/openobserve:
+    endpoint: "http://openobserve:5080/api/default" # Docker Service Name 사용
+    headers:
+      # admin@example.com : ChangeMe123! 의 Base64 인코딩 값
+      # echo -n 'admin@example.com:ChangeMe123!' | base64
+      Authorization: "Basic YWRtaW5AZXhhbXBsZS5jb206Q2hhbmdlTWUxMjMh"
+      stream-name: "default"
     tls:
       insecure: true
 
 service:
-  extensions: [bearertokenauth/incoming]
+  extensions: [bearertokenauth/incoming, health_check]
   pipelines:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [otlp/signoz]
+      exporters: [otlphttp/openobserve]
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [otlp/signoz]
+      exporters: [otlphttp/openobserve]
     logs:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [otlp/signoz]
+      exporters: [otlphttp/openobserve]
