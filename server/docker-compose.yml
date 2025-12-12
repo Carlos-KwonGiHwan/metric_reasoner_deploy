@@ -1,5 +1,9 @@
 version: "3"
 
+networks:
+  shared_network:
+    driver: bridge
+
 services:
   # --- 1. Load Balancer ---
   nginx-lb:
@@ -9,7 +13,9 @@ services:
       - "4317:4317" # 외부에서 들어오는 gRPC 요청
       - "4318:4318" # 외부에서 들어오는 HTTP 요청
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./configs/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - shared_network
     depends_on:
       - otel-collector-1
       - otel-collector-2
@@ -18,11 +24,13 @@ services:
   # --- 2. OTel Collectors (3 Replicas) ---
   # *중요: 호스트 포트(ports)를 매핑하지 않습니다. Nginx를 통해서만 통신합니다.
   otel-collector-1:
-    image: signoz/signoz-otel-collector:0.88.10
+    image: otel/opentelemetry-collector-contrib:0.100.0
     container_name: otel-collector-1
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
-      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./configs/otel_collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    networks:
+      - shared_network
     depends_on:
       - openobserve
     deploy:
@@ -31,11 +39,13 @@ services:
           memory: 1500M
 
   otel-collector-2:
-    image: signoz/signoz-otel-collector:0.88.10
+    image: otel/opentelemetry-collector-contrib:0.100.0
     container_name: otel-collector-2
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
-      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./configs/otel_collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    networks:
+      - shared_network
     depends_on:
       - openobserve
     deploy:
@@ -44,11 +54,13 @@ services:
           memory: 1500M
 
   otel-collector-3:
-    image: signoz/signoz-otel-collector:0.88.10
+    image: otel/opentelemetry-collector-contrib:0.100.0
     container_name: otel-collector-3
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
-      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./configs/otel_collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    networks:
+      - shared_network
     depends_on:
       - openobserve
     deploy:
@@ -63,6 +75,8 @@ services:
     restart: always
     ports:
       - "5080:5080" # UI 접속 포트
+    networks:
+      - shared_network
     volumes:
       - ./data:/data
     environment:

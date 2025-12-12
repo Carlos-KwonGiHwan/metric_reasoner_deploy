@@ -1,5 +1,4 @@
 receivers:
-  # 1. Host Metrics (수정 없음)
   hostmetrics:
     root_path: /host/root
     collection_interval: "${env:COLLECTION_INTERVAL}"
@@ -11,7 +10,6 @@ receivers:
       load:
       disk:
 
-  # 2. Docker Stats (수정 없음)
   docker_stats:
     endpoint: "unix:///var/run/docker.sock"
     api_version: "${env:DOCKER_API_VERSION}"
@@ -22,111 +20,35 @@ receivers:
       container.network.io.usage.rx_bytes: { enabled: true }
       container.network.io.usage.tx_bytes: { enabled: true }
 
-  # 3. [Source A] 호스트의 일반 로그 파일 수집
+
   filelog:
     include:
       - "${env:APP_LOG_DIR}/**/*.log"
-    operators: &app_log_parsers  # [YAML 앵커] 파싱 로직을 재사용하기 위해 이름표를 붙입니다.
-      # -------------------------------------------------------
-      # 공통 파싱 로직 시작 (MySQL -> Python)
-      # -------------------------------------------------------
-      # 1) MySQL general log 파싱
+    operators:
       - type: regex_parser
         id: mysql_parser
         parse_from: body
-        on_error: send # 파싱 실패해도 로그 버리지 않음
-        regex: '^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(?P<conn_id>\d+)\s+(?P<cmd>[A-Za-z]+)(?:\s+(?P<msg>.*))?$'
+        on_error: send
+        if: 'body matches "^\\d{4}-\\d{2}-\\d{2}T"'
+        regex: ^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(?P<body>.*)$
         timestamp:
           parse_from: attributes.ts
           layout: '%Y-%m-%dT%H:%M:%S.%fZ'
 
-      # 2) Python logger 패턴 파싱 (MySQL이 아닌 경우)
       - type: regex_parser
         id: python_parser
         parse_from: body
-        on_error: send
-        if: 'attributes.conn_id == nil' # MySQL 파싱 성공했으면 건너뜀
-        regex: '^(?P<ts>\d{2}:\d{2}:\d{2}\.\d{3}) \| (?P<level>\S+) \| (?P<location>[^-]+) - (?P<msg>.*)$'
+        if: 'attributes.conn_id == nil and body matches "^\\d{2}:\\d{2}:\\d{2}\\."'
+        regex: >
+          ^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+
+          (?P<conn_id>\d+)\s+
+          (?P<cmd>[A-Za-z]+)
+          (?:\s+(?P<msg>.*))?$        
         timestamp:
           parse_from: attributes.ts
           layout: '%H:%M:%S.%L'
+        on_error: drop
 
-      # 3) 정리: msg를 body로 승격
-      - type: move
-        from: attributes.msg
-        to: body
-        if: 'attributes.msg != nil'
-
-      # 4) 정리: 임시 Timestamp 제거
-      - type: remove
-        field: attributes.ts
-        if: 'attributes.ts != nil'
-
-      # 5) Fallback 태깅 (둘 다 실패 시)
-      - type: add
-        field: attributes.unparsed
-        value: "true"
-        if: 'attributes.conn_id == nil and attributes.level == nil'
-      # -------------------------------------------------------
-      # 공통 파싱 로직 끝
-      # -------------------------------------------------------
-
-  # 4. [Source B] Docker 컨테이너 로그 수집
-  filelog/docker:
-    include:
-      - /var/lib/docker/containers/*/*-json.log
-    operators:
-      # [Step 1] 메타데이터 추출 (Container ID)
-      - type: regex_parser
-        id: extract_metadata_from_path
-        parse_from: attributes["log.file.path"]
-        regex: 'containers/(?P<container_id>[a-z0-9]{64})/'
-        to: resource["container.id"]
-
-      # [Step 2] Docker JSON 껍데기 벗기기
-      - type: json_parser
-        id: parser_docker
-        parse_from: body
-        timestamp:
-          parse_from: attributes.time
-          layout: '%Y-%m-%dT%H:%M:%S.%fZ'
-
-      # [Step 3] 실제 로그 내용을 body로 이동 (이제 body는 앱 로그 텍스트가 됨)
-      - type: move
-        from: attributes.log
-        to: body
-
-      # [Step 4] stdout/stderr 스트림 정보 저장
-      - type: move
-        from: attributes.stream
-        to: attributes["log.stream"]
-
-      # [Step 5] ★★★ 여기에 MySQL/Python 파서를 붙입니다 ★★★
-      # 위에서 정의한 &app_log_parsers 앵커 내용을 그대로 가져옵니다.
-      # (YAML 문법상 리스트 병합이 까다로울 수 있어, 안전하게 내용을 그대로 복붙합니다)
-      
-      # --- MySQL Parser (Docker용) ---
-      - type: regex_parser
-        id: mysql_parser_docker
-        parse_from: body
-        on_error: send
-        regex: '^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(?P<conn_id>\d+)\s+(?P<cmd>[A-Za-z]+)(?:\s+(?P<msg>.*))?$'
-        timestamp:
-          parse_from: attributes.ts
-          layout: '%Y-%m-%dT%H:%M:%S.%fZ'
-
-      # --- Python Parser (Docker용) ---
-      - type: regex_parser
-        id: python_parser_docker
-        parse_from: body
-        on_error: send
-        if: 'attributes.conn_id == nil'
-        regex: '^(?P<ts>\d{2}:\d{2}:\d{2}\.\d{3}) \| (?P<level>\S+) \| (?P<location>[^-]+) - (?P<msg>.*)$'
-        timestamp:
-          parse_from: attributes.ts
-          layout: '%H:%M:%S.%L'
-
-      # --- 정리 ---
       - type: move
         from: attributes.msg
         to: body
@@ -140,23 +62,45 @@ receivers:
         field: attributes.unparsed
         value: "true"
         if: 'attributes.conn_id == nil and attributes.level == nil'
+
+  # 4. Docker 컨테이너 표준 로그 (stdout/stderr) 수집
+  # filelog/docker:
+  #   include:
+  #     - /var/lib/docker/containers/*/*-json.log
+  #   operators:
+  #     # 1️⃣ Docker JSON 파싱 (가장 먼저)
+  #     - type: json_parser
+  #       id: parser_docker
+  #       parse_from: body
+  #       timestamp:
+  #         parse_from: attributes.time
+  #         layout: '%Y-%m-%dT%H:%M:%S.%fZ'
+
+  #     # 2️⃣ 실제 로그 메시지 승격
+  #     - type: move
+  #       from: attributes.log
+  #       to: body
+
+  #     # 3️⃣ stdout / stderr
+  #     - type: move
+  #       from: attributes.stream
+  #       to: attributes["log.stream"]
+
+  #     # 4️⃣ container.id (방어적으로)
+  #     - type: regex_parser
+  #       id: extract_metadata_from_path
+  #       parse_from: attributes["log.file.path"]
+  #       if: 'attributes["log.file.path"] != nil'
+  #       regex: 'containers/(?P<container_id>[a-z0-9]{64})/'
+  #       to: resource["container.id"]
+  #       on_error: drop
 
 
 processors:
   resourcedetection:
     detectors: [env, system, docker]
     timeout: 5s
-    override: false # 기존 리소스 속성을 덮어쓰지 않음
-
-  # .env의 NODE_ID 등을 메타데이터로 추가
-  resource:
-    attributes:
-      - key: host.name
-        value: "${env:NODE_ID}"
-        action: upsert
-      - key: service.name
-        value: "${env:OTEL_LOG_AGENT_NAME}"
-        action: upsert
+    override: false
 
   memory_limiter:
     check_interval: 1s
@@ -167,35 +111,53 @@ processors:
     logs:
       log_record:
         - 'IsMatch(resource.attributes["container.image.name"], "otel/opentelemetry-collector")'
-        # 컨테이너 이름이 otel-agent인 것도 제외
         - 'IsMatch(resource.attributes["container.name"], "otel-agent")'
+
+  attributes/cleanup:
+    actions:
+      - key: time
+        action: delete
+      - key: unparsed
+        action: delete
+      - key: log.file.path
+        action: delete
+
 
   batch:
     send_batch_size: 1000
     timeout: 5s
 
 exporters:
-  otlp:
-    # http://127.0.0.1:4317 등 .env 주소 사용
+  # otlp:
+  #   # http://127.0.0.1:4317 등 .env 주소 사용
+  #   endpoint: "http://${env:OTEL_COLLECTOR_HOST}"
+  #   tls:
+  #     insecure: true
+  #   headers:
+  #     # [Gateway 인증] .env의 토큰 사용
+  #     Authorization: "Bearer ${env:GATEWAY_AUTH_TOKEN}"
+
+  otlphttp:
     endpoint: "http://${env:OTEL_COLLECTOR_HOST}"
+    headers:
+      Authorization: "Bearer ${env:GATEWAY_AUTH_TOKEN}"
     tls:
       insecure: true
-    headers:
-      # [Gateway 인증] .env의 토큰 사용
-      Authorization: "Bearer ${env:GATEWAY_AUTH_TOKEN}"
 
   debug:
-    verbosity: detailed
+    verbosity: basic
 
 service:
   pipelines:
     metrics:
       receivers: [hostmetrics, docker_stats]
-      processors: [resourcedetection, resource, memory_limiter, batch]
-      exporters: [otlp]
+      processors: [resourcedetection, memory_limiter, batch]
+      # exporters: [otlp]
+      exporters: [otlphttp]
 
     logs:
       # [중요] 두 리시버 모두 포함해야 함
       receivers: [filelog, filelog/docker] 
-      processors: [resourcedetection, resource, filter/drop_otel, memory_limiter, batch]
-      exporters: [otlp] # 문제 해결 후 debug 제거
+      processors: [resourcedetection, filter/drop_otel, memory_limiter, attributes/cleanup, batch]
+      # exporters: [otlp] # 문제 해결 후 debug 제거
+      exporters: [otlphttp]
