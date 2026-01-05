@@ -28,11 +28,14 @@ services:
     container_name: otel-collector-1
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
-      - ./configs/otel_collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./configs/otel_collector/otel-collector-datadog.yaml:/etc/otel-collector-config.yaml
     networks:
       - shared_network
     depends_on:
       - openobserve
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_SITE=${DD_SITE}
     deploy:
       resources:
         limits:
@@ -43,11 +46,14 @@ services:
     container_name: otel-collector-2
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
-      - ./configs/otel_collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./configs/otel_collector/otel-collector-datadog.yaml:/etc/otel-collector-config.yaml
     networks:
       - shared_network
     depends_on:
       - openobserve
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_SITE=${DD_SITE}
     deploy:
       resources:
         limits:
@@ -58,11 +64,14 @@ services:
     container_name: otel-collector-3
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
-      - ./configs/otel_collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./configs/otel_collector/otel-collector-datadog.yaml:/etc/otel-collector-config.yaml
     networks:
       - shared_network
     depends_on:
       - openobserve
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
+      - DD_SITE=${DD_SITE}
     deploy:
       resources:
         limits:
@@ -80,13 +89,13 @@ services:
     volumes:
       - ./data:/data
     environment:
-      - ZO_ROOT_USER_EMAIL=admin@example.com
-      - ZO_ROOT_USER_PASSWORD=ChangeMe123!
+      - ZO_ROOT_USER_EMAIL=${ZO_ROOT_USER_EMAIL}
+      - ZO_ROOT_USER_PASSWORD=${ZO_ROOT_USER_PASSWORD}
       # S3 설정 (이전 대화 기반)
-      - ZO_S3_BUCKET_NAME=my-openobserve-bucket
-      - ZO_S3_REGION_NAME=ap-northeast-2
-      - ZO_DATA_DIR=/data
-      - ZO_STORAGE_TYPE=s3
+      - ZO_S3_BUCKET_NAME=${ZO_S3_BUCKET_NAME}
+      - ZO_S3_REGION_NAME=${ZO_S3_REGION_NAME}
+      - ZO_DATA_DIR=${ZO_DATA_DIR}
+      - ZO_STORAGE_TYPE=${ZO_STORAGE_TYPE}
       # AWS IAM Role 사용 시 아래 키 삭제 가능
-      - AWS_ACCESS_KEY_ID=YOUR_ACCESS_KEY
-      - AWS_SECRET_ACCESS_KEY=YOUR_SECRET_KEY
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}

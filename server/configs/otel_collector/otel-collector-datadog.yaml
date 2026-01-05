@@ -1,0 +1,89 @@
+# otel-gateway-config.yaml
+extensions:
+  # 1. 인증 설정 (API Key 정의)
+  bearertokenauth/incoming:
+    token: "my-secret-api-key-1234"
+  health_check:
+    endpoint: "0.0.0.0:13133"
+
+receivers:
+  otlp:
+    protocols:
+      # grpc:
+      #   endpoint: 0.0.0.0:4317
+      #   auth:
+      #     authenticator: bearertokenauth/incoming
+      http:
+        endpoint: 0.0.0.0:4318
+        auth:
+          authenticator: bearertokenauth/incoming
+
+processors:
+  # 2. 메모리 보호 (급격한 트래픽 스파이크 방지)
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 1000
+    spike_limit_mib: 200
+
+  # 3. 배치 처리 (네트워크 전송 효율화)
+  batch:
+    send_batch_size: 2000
+    timeout: 5s
+
+  resourcedetection:
+    detectors: [env, system] # 환경 변수 및 시스템 정보를 통해 호스트명 추출
+    override: false
+
+  resource:
+    attributes:
+      # Datadog이 필터링에 사용하는 핵심 키 (강제 덮어쓰기)
+      - key: env
+        value: "se-prod-alert"
+        action: upsert
+      - key: service
+        value: "se-prod-alert-server"
+        action: upsert
+      # OTel 표준 키 (강제 덮어쓰기)
+      - key: deployment.environment
+        value: "se-prod-alert"
+        action: upsert
+      - key: service.name
+        value: "se-prod-alert-server"
+        action: upsert
+
+exporters:
+  # OpenObserve로 보내는 설정
+  # otlphttp/openobserve:
+  #   endpoint: "http://openobserve:5080/api/default" # Docker Service Name 사용
+  #   headers:
+  #     # admin@example.com : ChangeMe123! 의 Base64 인코딩 값
+  #     # echo -n 'admin@example.com:ChangeMe123!' | base64
+  #     Authorization: "Basic YWRtaW5AZXhhbXBsZS5jb206Q2hhbmdlTWUxMjMh"
+  #     stream-name: "default"
+  #   tls:
+  #     insecure: true
+  datadog:
+      api:
+        site: ${env:DD_SITE} # 사용 중인 Datadog 사이트 (US1 기준)
+        key: ${env:DD_API_KEY}
+      # 호스트 이름을 정확히 매핑하기 위한 설정 (문서 권장)
+      # hostname_sources: ["resource_attribute", "system"]
+  debug:
+    verbosity: basic
+
+
+service:
+  extensions: [bearertokenauth/incoming, health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [resourcedetection, resource, memory_limiter, batch]
+      exporters: [datadog, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [resourcedetection, resource, memory_limiter, batch]
+      exporters: [datadog, debug]
+    logs:
+      receivers: [otlp]
+      processors: [resourcedetection, resource, memory_limiter, batch]
+      exporters: [datadog, debug]

@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   otel-agent:
-    image: otel/opentelemetry-collector-contrib:0.100.0  # contrib 이미지 필수
+    image: otel/opentelemetry-collector-contrib:latest  # contrib 이미지 필수
     container_name: otel-agent
     command: ["--config=/etc/otelcol/config.yaml"]
     user: "0:0"
@@ -16,6 +16,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - ${APP_LOG_DIR}:${APP_LOG_DIR}:ro
+    logging:
+      driver: "local"
 
     environment:
       # 1. 연결 및 인증 정보

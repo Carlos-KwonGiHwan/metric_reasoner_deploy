@@ -24,77 +24,83 @@ receivers:
   filelog:
     include:
       - "${env:APP_LOG_DIR}/**/*.log"
+    include_file_path: true 
+    multiline:
+      line_start_pattern: '^\d{4}-\d{2}-\d{2}'  # ← 날짜만 체크
     operators:
-      - type: regex_parser
-        id: mysql_parser
-        parse_from: body
-        on_error: send
-        if: 'body matches "^\\d{4}-\\d{2}-\\d{2}T"'
-        regex: ^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+(?P<body>.*)$
-        timestamp:
-          parse_from: attributes.ts
-          layout: '%Y-%m-%dT%H:%M:%S.%fZ'
+      # - type: regex_parser
+      #   id: mysql_parser
+      #   parse_from: body
+      #   on_error: send
+      #   if: 'attributes["log.file.path"] matches "mysql"'  # ← body 조건 제거
+      #   regex: '^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\s+(?P<body>.*)$'
+      #   timestamp:
+      #     parse_from: attributes.ts
+      #     layout: '%Y-%m-%dT%H:%M:%S.%fZ'
 
       - type: regex_parser
-        id: python_parser
-        parse_from: body
-        if: 'attributes.conn_id == nil and body matches "^\\d{2}:\\d{2}:\\d{2}\\."'
-        regex: >
-          ^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+
-          (?P<conn_id>\d+)\s+
-          (?P<cmd>[A-Za-z]+)
-          (?:\s+(?P<msg>.*))?$        
-        timestamp:
-          parse_from: attributes.ts
-          layout: '%H:%M:%S.%L'
-        on_error: drop
+        parse_from: attributes["log.file.path"]
+        regex: '.*/(?P<env>[^/]+)/(?P<container>[^/]+)/[^/]+\.log$'
+
+      # - type: regex_parser
+      #   id: python_ts
+      #   parse_from: attributes.ts
+      #   if: 'attributes.ts matches "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\."'
+      #   regex: '^(?P<ts>.*)$'
+      #   timestamp:
+      #     parse_from: attributes.ts
+      #     layout: '%Y-%m-%d %H:%M:%S.%f'
+
+      # - type: regex_parser
+      #   id: python_parser
+      #   parse_from: body
+      #   if: 'attributes.conn_id == nil and body matches "^\\d{2}:\\d{2}:\\d{2}\\."'
+      #   regex: >
+      #     ^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+
+      #     (?P<conn_id>\d+)\s+
+      #     (?P<cmd>[A-Za-z]+)
+      #     (?:\s+(?P<msg>.*))?$        
+      #   timestamp:
+      #     parse_from: attributes.ts
+      #     layout: '%H:%M:%S.%L'
+      #   on_error: drop
 
       - type: move
-        from: attributes.msg
-        to: body
-        if: 'attributes.msg != nil'
-
+        from: attributes.container
+        to: attributes["container_name"]
+      - type: move
+        from: attributes.env
+        to: attributes["deployment.environment"]
+      
       - type: remove
         field: attributes.ts
         if: 'attributes.ts != nil'
 
-      - type: add
-        field: attributes.unparsed
-        value: "true"
-        if: 'attributes.conn_id == nil and attributes.level == nil'
-
-  # 4. Docker 컨테이너 표준 로그 (stdout/stderr) 수집
   # filelog/docker:
   #   include:
   #     - /var/lib/docker/containers/*/*-json.log
+  #   include_file_path: true
+  #   include_file_name: true
   #   operators:
-  #     # 1️⃣ Docker JSON 파싱 (가장 먼저)
+  #     # 1. Docker JSON 파싱
   #     - type: json_parser
   #       id: parser_docker
   #       parse_from: body
   #       timestamp:
   #         parse_from: attributes.time
   #         layout: '%Y-%m-%dT%H:%M:%S.%fZ'
+  #       on_error: send # 파싱 실패해도 그냥 보냄 (가장 안전)
 
-  #     # 2️⃣ 실제 로그 메시지 승격
+  #     # 2. 실제 로그 메시지 승격
   #     - type: move
   #       from: attributes.log
   #       to: body
+  #       on_error: send
 
-  #     # 3️⃣ stdout / stderr
+  #     # 3. stdout / stderr 메타데이터
   #     - type: move
   #       from: attributes.stream
   #       to: attributes["log.stream"]
-
-  #     # 4️⃣ container.id (방어적으로)
-  #     - type: regex_parser
-  #       id: extract_metadata_from_path
-  #       parse_from: attributes["log.file.path"]
-  #       if: 'attributes["log.file.path"] != nil'
-  #       regex: 'containers/(?P<container_id>[a-z0-9]{64})/'
-  #       to: resource["container.id"]
-  #       on_error: drop
-
 
 processors:
   resourcedetection:
@@ -125,7 +131,7 @@ processors:
 
   batch:
     send_batch_size: 1000
-    timeout: 5s
+    timeout: 10s
 
 exporters:
   # otlp:
@@ -157,7 +163,7 @@ service:
 
     logs:
       # [중요] 두 리시버 모두 포함해야 함
-      receivers: [filelog, filelog/docker] 
+      receivers: [filelog] 
       processors: [resourcedetection, filter/drop_otel, memory_limiter, attributes/cleanup, batch]
       # exporters: [otlp] # 문제 해결 후 debug 제거
-      exporters: [otlphttp]
+      exporters: [otlphttp, debug]
