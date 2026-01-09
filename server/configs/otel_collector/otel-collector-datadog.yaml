@@ -50,6 +50,16 @@ processors:
       # - key: service.name
       #   value: "se-prod-alert-server"
       #   action: upsert
+    # env 매핑 (필요시 활성화)
+      - key: env
+        from_attribute: deployment.environment
+        action: upsert
+      - key: service
+        from_attribute: container.name
+        action: upsert
+      - key: service.name
+        from_attribute: container.name
+        action: upsert
       - key: otel.gateway
         value: "central-collector"
         action: insert

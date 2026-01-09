@@ -108,6 +108,14 @@ processors:
     timeout: 5s
     override: false
 
+  resource/node_mapping:
+    attributes:
+      # host.name (NODE_ID) → env로 복사
+      - key: env
+        from_attribute: host.name
+        action: upsert
+
+
   memory_limiter:
     check_interval: 1s
     limit_mib: ${env:MEMORY_LIMIT_MIB}
@@ -119,18 +127,18 @@ processors:
         - 'IsMatch(resource.attributes["container.image.name"], "otel/opentelemetry-collector")'
         - 'IsMatch(resource.attributes["container.name"], "otel-agent")'
 
-  attributes/cleanup:
-    actions:
-      - key: time
-        action: delete
-      - key: unparsed
-        action: delete
-      - key: log.file.path
-        action: delete
+  # attributes/cleanup:
+  #   actions:
+  #     - key: time
+  #       action: delete
+  #     - key: unparsed
+  #       action: delete
+  #     - key: log.file.path
+  #       action: delete
 
-  batch:
-    send_batch_size: 1000
-    timeout: 10s
+  # batch:
+  #   send_batch_size: 1000
+  #   timeout: 10s
 
 exporters:
   # otlp:
@@ -156,9 +164,9 @@ service:
   pipelines:
     metrics:
       receivers: [hostmetrics, docker_stats]
-      processors: [resourcedetection, memory_limiter, batch]
+      processors: [resourcedetection, resource/node_mapping, memory_limiter]
       # exporters: [otlp]
-      exporters: [otlphttp]
+      exporters: [otlphttp, debug]
 
     logs:
       # [중요] 두 리시버 모두 포함해야 함
@@ -166,10 +174,11 @@ service:
       processors:
         [
           resourcedetection,
+          resource/node_mapping,
           filter/drop_otel,
           memory_limiter,
-          attributes/cleanup,
-          batch,
+          # attributes/cleanup,
+          # batch,
         ]
       # exporters: [otlp] # 문제 해결 후 debug 제거
       exporters: [otlphttp, debug]
