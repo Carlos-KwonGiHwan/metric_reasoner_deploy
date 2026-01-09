@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   otel-agent:
-    image: otel/opentelemetry-collector-contrib:latest  # contrib 이미지 필수
+    image: otel/opentelemetry-collector-contrib:latest # contrib 이미지 필수
     container_name: otel-agent
     command: ["--config=/etc/otelcol/config.yaml"]
     user: "0:0"
@@ -23,7 +23,7 @@ services:
       # 1. 연결 및 인증 정보
       - OTEL_COLLECTOR_HOST=${OTEL_COLLECTOR_HOST}
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_COLLECTOR_HOST} # 예: 127.0.0.1:4317
-      - GATEWAY_AUTH_TOKEN=${GATEWAY_AUTH_TOKEN}           # [추가] 인증 토큰
+      - GATEWAY_AUTH_TOKEN=${GATEWAY_AUTH_TOKEN} # [추가] 인증 토큰
 
       # 2. 메타데이터 및 변수
       - NODE_ID=${NODE_ID}
@@ -32,7 +32,7 @@ services:
       - DOCKER_API_VERSION=${DOCKER_API_VERSION:-1.24}
       - COLLECTION_INTERVAL=${COLLECTION_INTERVAL:-10s}
       - MEMORY_LIMIT_MIB=${MEMORY_LIMIT_MIB:-400}
-      
+
       # 3. Host Metrics 경로 (Config 파일에서 참조)
       - HOST_PROC=/host/proc
       - HOST_SYS=/host/sys

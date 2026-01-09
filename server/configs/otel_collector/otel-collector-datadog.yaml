@@ -37,19 +37,22 @@ processors:
   resource:
     attributes:
       # Datadog이 필터링에 사용하는 핵심 키 (강제 덮어쓰기)
-      - key: env
-        value: "se-prod-alert"
-        action: upsert
-      - key: service
-        value: "se-prod-alert-server"
-        action: upsert
-      # OTel 표준 키 (강제 덮어쓰기)
-      - key: deployment.environment
-        value: "se-prod-alert"
-        action: upsert
-      - key: service.name
-        value: "se-prod-alert-server"
-        action: upsert
+      # - key: env
+      #   value: "se-prod-alert"
+      #   action: upsert
+      # - key: service
+      #   value: "se-prod-alert-server"
+      #   action: upsert
+      # # OTel 표준 키 (강제 덮어쓰기)
+      # - key: deployment.environment
+      #   value: "se-prod-alert"
+      #   action: upsert
+      # - key: service.name
+      #   value: "se-prod-alert-server"
+      #   action: upsert
+      - key: otel.gateway
+        value: "central-collector"
+        action: insert
 
 exporters:
   # OpenObserve로 보내는 설정
@@ -63,14 +66,13 @@ exporters:
   #   tls:
   #     insecure: true
   datadog:
-      api:
-        site: ${env:DD_SITE} # 사용 중인 Datadog 사이트 (US1 기준)
-        key: ${env:DD_API_KEY}
-      # 호스트 이름을 정확히 매핑하기 위한 설정 (문서 권장)
-      # hostname_sources: ["resource_attribute", "system"]
+    api:
+      site: ${env:DD_SITE} # 사용 중인 Datadog 사이트 (US1 기준)
+      key: ${env:DD_API_KEY}
+    # 호스트 이름을 정확히 매핑하기 위한 설정 (문서 권장)
+    hostname_sources: ["resource_attribute", "system"]
   debug:
     verbosity: basic
-
 
 service:
   extensions: [bearertokenauth/incoming, health_check]
