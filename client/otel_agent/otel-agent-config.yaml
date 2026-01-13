@@ -51,6 +51,25 @@ receivers:
       - type: remove
         field: attributes.ts
         if: "attributes.ts != nil"
+  sqlquery:
+    driver: mysql
+    datasource: "${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(${MYSQL_HOST}:${MYSQL_PORT})/${MYSQL_DB}"
+    collection_interval: 10s
+    queries:
+      - sql: "SELECT count(*) as encounters FROM emr_encounter WHERE discharge_dt is NULL" # 실제 쿼리로 수정
+        metrics:
+          - metric_name: mysql.se.encounter_count
+            value_column: encounters
+            value_type: int
+      - sql: >
+          SELECT COUNT(*) AS encounters
+          FROM emr_score 
+          WHERE created_dt >= DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:00'), INTERVAL (MINUTE(NOW()) % 10) + 10 MINUTE)
+            AND created_dt <  DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:00'), INTERVAL (MINUTE(NOW()) % 10) MINUTE)
+        metrics:
+          - metric_name: mysql.se.score_count
+            value_column: encounters
+            value_type: int
 
 processors:
   resourcedetection:
@@ -131,7 +150,8 @@ exporters:
 service:
   pipelines:
     metrics:
-      receivers: [hostmetrics, docker_stats]
+      # receivers: [hostmetrics, docker_stats, sqlquery]
+      receivers: [hostmetrics, docker_stats, sqlquery]
       processors: [resourcedetection, resource/node_mapping, resource/service_mapping,  memory_limiter, batch]
       # exporters: [otlp]
       exporters: [otlphttp, debug]
@@ -150,4 +170,4 @@ service:
           batch,
         ]
       # exporters: [otlp] # 문제 해결 후 debug 제거
-      exporters: [otlphttp, debug]
+      exporters: [otlphttp]

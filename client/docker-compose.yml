@@ -40,3 +40,10 @@ services:
 
       # 4. 리소스 속성 (자동 주입됨)
       - OTEL_RESOURCE_ATTRIBUTES=service.name=${OTEL_LOG_AGENT_NAME},host.name=${NODE_ID},deployment.environment=${DEPLOYMENT_ENV},system.version=${SYSTEM_VERSION}
+
+      # 5. Mysql Parameters
+      - MYSQL_HOST=${MYSQL_HOST:-127.0.0.1}
+      - MYSQL_PORT=${MYSQL_PORT:-3306}
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DB=${MYSQL_DB}

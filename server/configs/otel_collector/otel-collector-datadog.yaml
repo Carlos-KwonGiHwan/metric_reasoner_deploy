@@ -64,6 +64,17 @@ processors:
         value: "central-collector"
         action: insert
 
+  # attributes:
+  #   actions:
+  #     # Resource attributes를 log attributes로 복사
+  #     - key: service
+  #       from_attribute: service.name
+  #       action: upsert
+  #     - key: env
+  #       from_attribute: env
+  #       action: upsert
+
+
 exporters:
   # OpenObserve로 보내는 설정
   # otlphttp/openobserve:
@@ -92,13 +103,13 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [resourcedetection, resource, memory_limiter, batch]
+      processors: [resourcedetection, resource, attributes, memory_limiter, batch]
       exporters: [datadog, debug]
     metrics:
       receivers: [otlp]
-      processors: [resourcedetection, resource, memory_limiter, batch]
+      processors: [resourcedetection, resource, attributes, memory_limiter, batch]
       exporters: [datadog, debug]
     logs:
       receivers: [otlp]
-      processors: [resourcedetection, resource, memory_limiter, batch]
+      processors: [resourcedetection, resource, attributes, memory_limiter, batch]
       exporters: [datadog, debug]
