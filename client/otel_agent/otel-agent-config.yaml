@@ -90,6 +90,9 @@ processors:
       - key: container.name
         from_attribute: container  # ← attributes에서 가져옴
         action: upsert
+      - key: container.name
+        value: "se-monitoring-tools" 
+        action: insert
       # container.name이 있으면 service.name으로 설정
       - key: service.name
         from_attribute: container.name
