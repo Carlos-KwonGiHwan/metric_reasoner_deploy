@@ -19,6 +19,7 @@ receivers:
       container.memory.usage.total: { enabled: true }
       container.network.io.usage.rx_bytes: { enabled: true }
       container.network.io.usage.tx_bytes: { enabled: true }
+      container.uptime: { enabled: true }
 
   filelog:
     include:
@@ -26,81 +27,30 @@ receivers:
     include_file_path: true
     multiline:
       line_start_pattern: '^\d{4}-\d{2}-\d{2}' # ← 날짜만 체크
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 5m
     operators:
-      # - type: regex_parser
-      #   id: mysql_parser
-      #   parse_from: body
-      #   on_error: send
-      #   if: 'attributes["log.file.path"] matches "mysql"'  # ← body 조건 제거
-      #   regex: '^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)\s+(?P<body>.*)$'
-      #   timestamp:
-      #     parse_from: attributes.ts
-      #     layout: '%Y-%m-%dT%H:%M:%S.%fZ'
-
       - type: regex_parser
         parse_from: attributes["log.file.path"]
         regex: '.*/(?P<env>[^/]+)/(?P<container>[^/]+)/[^/]+\.log$'
 
-      # - type: regex_parser
-      #   id: python_ts
-      #   parse_from: attributes.ts
-      #   if: 'attributes.ts matches "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\."'
-      #   regex: '^(?P<ts>.*)$'
-      #   timestamp:
-      #     parse_from: attributes.ts
-      #     layout: '%Y-%m-%d %H:%M:%S.%f'
-
-      # - type: regex_parser
-      #   id: python_parser
-      #   parse_from: body
-      #   if: 'attributes.conn_id == nil and body matches "^\\d{2}:\\d{2}:\\d{2}\\."'
-      #   regex: >
-      #     ^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\s+
-      #     (?P<conn_id>\d+)\s+
-      #     (?P<cmd>[A-Za-z]+)
-      #     (?:\s+(?P<msg>.*))?$
-      #   timestamp:
-      #     parse_from: attributes.ts
-      #     layout: '%H:%M:%S.%L'
-      #   on_error: drop
-
       - type: move
         from: attributes.container
-        to: resource.attributes["container.name"]
+        to: resource["container.name"]
 
       # - type: move
       #   from: attributes.env
       #   to: attributes["deployment.environment"]
+      - type: remove
+        field: attributes.env
+        if: "attributes.env != nil"
 
       - type: remove
         field: attributes.ts
         if: "attributes.ts != nil"
-
-  # filelog/docker:
-  #   include:
-  #     - /var/lib/docker/containers/*/*-json.log
-  #   include_file_path: true
-  #   include_file_name: true
-  #   operators:
-  #     # 1. Docker JSON 파싱
-  #     - type: json_parser
-  #       id: parser_docker
-  #       parse_from: body
-  #       timestamp:
-  #         parse_from: attributes.time
-  #         layout: '%Y-%m-%dT%H:%M:%S.%fZ'
-  #       on_error: send # 파싱 실패해도 그냥 보냄 (가장 안전)
-
-  #     # 2. 실제 로그 메시지 승격
-  #     - type: move
-  #       from: attributes.log
-  #       to: body
-  #       on_error: send
-
-  #     # 3. stdout / stderr 메타데이터
-  #     - type: move
-  #       from: attributes.stream
-  #       to: attributes["log.stream"]
 
 processors:
   resourcedetection:
@@ -115,10 +65,31 @@ processors:
         from_attribute: host.name
         action: upsert
 
+  resource/service_mapping:
+    attributes:
+
+      - key: container.name
+        from_attribute: container  # ← attributes에서 가져옴
+        action: upsert
+      # container.name이 있으면 service.name으로 설정
+      - key: service.name
+        from_attribute: container.name
+        action: upsert
+      
+      # Datadog service 태그
+      - key: service
+        from_attribute: container.name
+        action: upsert
+
+  batch:
+    send_batch_size: 512
+    send_batch_max_size: 1024
+    timeout: 5s
 
   memory_limiter:
     check_interval: 1s
     limit_mib: ${env:MEMORY_LIMIT_MIB}
+    spike_limit_mib: 128
 
   filter/drop_otel:
     error_mode: ignore
@@ -126,19 +97,6 @@ processors:
       log_record:
         - 'IsMatch(resource.attributes["container.image.name"], "otel/opentelemetry-collector")'
         - 'IsMatch(resource.attributes["container.name"], "otel-agent")'
-
-  # attributes/cleanup:
-  #   actions:
-  #     - key: time
-  #       action: delete
-  #     - key: unparsed
-  #       action: delete
-  #     - key: log.file.path
-  #       action: delete
-
-  # batch:
-  #   send_batch_size: 1000
-  #   timeout: 10s
 
 exporters:
   # otlp:
@@ -156,15 +114,25 @@ exporters:
       Authorization: "Bearer ${env:GATEWAY_AUTH_TOKEN}"
     tls:
       insecure: true
+    sending_queue:
+      enabled: true
+      num_consumers: 10
+      queue_size: 20000
+
+    retry_on_failure:
+      enabled: true
+      initial_interval: 2s
+      max_interval: 30s
+      max_elapsed_time: 5m
 
   debug:
-    verbosity: basic
+    verbosity: detailed
 
 service:
   pipelines:
     metrics:
       receivers: [hostmetrics, docker_stats]
-      processors: [resourcedetection, resource/node_mapping, memory_limiter]
+      processors: [resourcedetection, resource/node_mapping, resource/service_mapping,  memory_limiter, batch]
       # exporters: [otlp]
       exporters: [otlphttp, debug]
 
@@ -175,10 +143,11 @@ service:
         [
           resourcedetection,
           resource/node_mapping,
+          resource/service_mapping,
           filter/drop_otel,
           memory_limiter,
           # attributes/cleanup,
-          # batch,
+          batch,
         ]
       # exporters: [otlp] # 문제 해결 후 debug 제거
       exporters: [otlphttp, debug]

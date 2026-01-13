@@ -81,9 +81,9 @@ exporters:
       key: ${env:DD_API_KEY}
     # 호스트 이름을 정확히 매핑하기 위한 설정 (문서 권장)
     # hostname_sources: ["resource_attribute", "system"]
-    host_metadata:
-      enabled: true
-      hostname_source: resource_attribute  # 또는 config_or_system
+    # host_metadata:
+    #   enabled: true
+    #   hostname_source: resource_attribute  # 또는 config_or_system
   debug:
     verbosity: basic
 
