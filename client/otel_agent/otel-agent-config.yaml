@@ -9,8 +9,8 @@ receivers:
       filesystem:
         include_mount_points:
           mount_points:
-            - /host/root # 호스트의 / (Root)
-            - /host/root/aitrics-vc # 호스트의 /aitrics-vc
+            - / # 호스트의 / (Root)
+            - /aitrics-vc # 호스트의 /aitrics-vc
           match_type: strict
       load:
       disk:
