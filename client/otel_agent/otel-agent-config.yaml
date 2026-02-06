@@ -11,6 +11,7 @@ receivers:
           mount_points:
             - /host/root # 호스트의 / (Root)
             - /host/root/aitrics-vc # 호스트의 /aitrics-vc
+          match_type: strict
       load:
       disk:
 
@@ -25,6 +26,7 @@ receivers:
       container.network.io.usage.tx_bytes: { enabled: true }
       container.uptime: { enabled: true }
       container.restarts: { enabled: true } #재시작 횟수를 통해 + uptime을 통해 상태 추적
+    resource_attributes:
       container.name: { enabled: true } #컨테이너 이름
       container.image.id: { enabled: true } #컨테이너 이미지 id
       container.image.name: { enabled: true } #컨테이너 이미지 이름
