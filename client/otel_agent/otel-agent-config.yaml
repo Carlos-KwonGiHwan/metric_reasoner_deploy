@@ -27,7 +27,7 @@ receivers:
       container.uptime: { enabled: true }
       container.restarts: { enabled: true } #재시작 횟수를 통해 + uptime을 통해 상태 추적
     resource_attributes:
-      container.name: { enabled: true } #컨테이너 이름
+      # container.name: { enabled: true } #컨테이너 이름
       container.image.id: { enabled: true } #컨테이너 이미지 id
       container.image.name: { enabled: true } #컨테이너 이미지 이름
 
