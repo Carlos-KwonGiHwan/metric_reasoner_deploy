@@ -7,6 +7,10 @@ receivers:
       memory:
       network:
       filesystem:
+        include_mount_points:
+          mount_points:
+            - /host/root # 호스트의 / (Root)
+            - /host/root/aitrics-vc # 호스트의 /aitrics-vc
       load:
       disk:
 
@@ -20,6 +24,10 @@ receivers:
       container.network.io.usage.rx_bytes: { enabled: true }
       container.network.io.usage.tx_bytes: { enabled: true }
       container.uptime: { enabled: true }
+      container.restarts: { enabled: true } #재시작 횟수를 통해 + uptime을 통해 상태 추적
+      container.name: { enabled: true } #컨테이너 이름
+      container.image.id: { enabled: true } #컨테이너 이미지 id
+      container.image.name: { enabled: true } #컨테이너 이미지 이름
 
   filelog:
     include:
@@ -63,7 +71,7 @@ receivers:
             value_type: int
       - sql: >
           SELECT COUNT(*) AS encounters
-          FROM emr_score 
+          FROM emr_score
           WHERE created_dt >= DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:00'), INTERVAL (MINUTE(NOW()) % 10) + 10 MINUTE)
             AND created_dt <  DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:00'), INTERVAL (MINUTE(NOW()) % 10) MINUTE)
         metrics:
@@ -86,18 +94,17 @@ processors:
 
   resource/service_mapping:
     attributes:
-
       - key: container.name
-        from_attribute: container  # ← attributes에서 가져옴
+        from_attribute: container # ← attributes에서 가져옴
         action: upsert
       - key: container.name
-        value: "se-monitoring-tools" 
+        value: "se-monitoring-tools"
         action: insert
       # container.name이 있으면 service.name으로 설정
       - key: service.name
         from_attribute: container.name
         action: upsert
-      
+
       # Datadog service 태그
       - key: service
         from_attribute: container.name
@@ -155,15 +162,21 @@ service:
     metrics:
       # receivers: [hostmetrics, docker_stats, sqlquery]
       receivers: [hostmetrics, docker_stats, sqlquery]
-      processors: [resourcedetection, resource/node_mapping, resource/service_mapping,  memory_limiter, batch]
+      processors:
+        [
+          resourcedetection,
+          resource/node_mapping,
+          resource/service_mapping,
+          memory_limiter,
+          batch,
+        ]
       # exporters: [otlp]
       exporters: [otlphttp, debug]
 
     logs:
       # [중요] 두 리시버 모두 포함해야 함
       receivers: [filelog]
-      processors:
-        [
+      processors: [
           resourcedetection,
           resource/node_mapping,
           resource/service_mapping,
