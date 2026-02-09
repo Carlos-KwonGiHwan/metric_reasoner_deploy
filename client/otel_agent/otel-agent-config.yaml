@@ -10,7 +10,7 @@ receivers:
         include_mount_points:
           mount_points:
             - / # 호스트의 / (Root)
-            - /aitrics-vc # 호스트의 /aitrics-vc
+            - "${env:APP_DIR}" # 호스트의 /aitrics-vc
           match_type: strict
       load:
       disk:
